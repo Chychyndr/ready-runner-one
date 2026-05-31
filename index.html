@@ -112,6 +112,71 @@
         linear-gradient(90deg, rgba(83, 83, 83, 0.10), transparent 27%);
       mix-blend-mode: multiply;
     }
+
+
+    @media (max-width: 720px) {
+      .hud {
+        letter-spacing: 0.08em;
+      }
+
+      .title {
+        left: 50%;
+        top: calc(env(safe-area-inset-top, 0px) + 12px);
+        transform: translateX(-50%);
+        width: 92vw;
+        font-size: clamp(14px, 4.2vw, 20px);
+        letter-spacing: 0.15em;
+        text-align: center;
+        white-space: nowrap;
+      }
+
+      .goal {
+        top: calc(env(safe-area-inset-top, 0px) + 44px);
+        font-size: clamp(17px, 5vw, 24px);
+        letter-spacing: 0.08em;
+        padding: 4px 10px 5px;
+        white-space: nowrap;
+      }
+
+      .score {
+        left: 50%;
+        right: auto;
+        top: calc(env(safe-area-inset-top, 0px) + 86px);
+        transform: translateX(-50%);
+        width: 100%;
+        font-size: clamp(12px, 3.7vw, 17px);
+        letter-spacing: 0.08em;
+        text-align: center;
+        white-space: pre;
+      }
+
+      .hint {
+        bottom: calc(env(safe-area-inset-bottom, 0px) + 74px);
+        width: 100%;
+        font-size: clamp(12px, 3.7vw, 16px);
+        letter-spacing: 0.14em;
+      }
+    }
+
+    @media (max-width: 420px) {
+      .title {
+        top: calc(env(safe-area-inset-top, 0px) + 10px);
+        font-size: clamp(13px, 3.9vw, 16px);
+        letter-spacing: 0.12em;
+      }
+
+      .goal {
+        top: calc(env(safe-area-inset-top, 0px) + 38px);
+        font-size: clamp(16px, 4.7vw, 20px);
+        letter-spacing: 0.06em;
+      }
+
+      .score {
+        top: calc(env(safe-area-inset-top, 0px) + 76px);
+        font-size: clamp(11px, 3.4vw, 14px);
+        letter-spacing: 0.06em;
+      }
+    }
   </style>
 </head>
 <body>
@@ -405,43 +470,8 @@
         fade.style.opacity = "0";
         endingTimer = 0;
         portal = null;
-        obstacles = [];
-        prize = null;
-        setScoreText();
-      }
-
-      function finishTeleport() {
-        state = "play";
-        score = Math.max(score, TELEPORT_TARGET_SCORE);
-        runTime = 0;
-        speed = POST_TELEPORT_SPEED * S;
-        postTeleportTime = 0;
-        teleported = true;
-        portalTimer = 0;
-        rewindCharge = 0;
-        portal = null;
-        firewall = null;
-        prize = {
-          x: W + 190 * S,
-          y: GROUND - 72 * S,
-          w: 86 * S,
-          h: 70 * S,
-          t: 0,
-          // The visible key center is x + 43 * S. Keep it under the centered GOAL 10000 panel.
-          targetX: W / 2 - 43 * S
-        };
-        obstacles = [];
-        dust = [];
         sparks = [];
-        nextSpawn = 0.75;
-        shake = 3 * S;
-        dino.x = START_X;
-        dino.y = GROUND - dino.h;
-        dino.vy = 0;
-        dino.ground = true;
-        dino.portalScale = 1;
-        fade.style.opacity = "0";
-        hint.textContent = "";
+        setScoreText();
       }
 
       window.addEventListener("keydown", (e) => {
@@ -471,18 +501,63 @@
         clearRewindEffects();
       });
 
+      window.addEventListener("pointerdown", (e) => {
+        if (e.pointerType !== "touch") return;
+        e.preventDefault();
+        if (e.clientX < W * 0.38) {
+          keys.Back = true;
+          return;
+        }
+        if (state === "intro" || state === "dead" || state === "win") {
+          startGame();
+        } else if (state === "play") {
+          jump();
+        }
+      }, { passive: false });
+
+      window.addEventListener("pointerup", (e) => {
+        if (e.pointerType !== "touch") return;
+        keys.Back = false;
+        clearRewindEffects();
+      }, { passive: true });
+
+      window.addEventListener("pointercancel", (e) => {
+        if (e.pointerType !== "touch") return;
+        keys.Back = false;
+        clearRewindEffects();
+      }, { passive: true });
+
       window.addEventListener("resize", resize);
 
       function spawnCloud(x = W + rnd(0, 180 * S)) {
         clouds.push({
           x,
-          y: rnd(58 * S, Math.max(96 * S, GROUND - 170 * S)),
-          s: S * rnd(0.82, 1.24),
+          y: rnd(72, Math.max(92, H * 0.34)),
+          s: rnd(0.7, 1.35) * S,
           v: rnd(8, 23) * S
         });
       }
 
+      function spawnPostTeleportPrize() {
+        if (prize) return;
+        prize = {
+          x: W + 130 * S,
+          y: GROUND - 122 * S,
+          w: 98 * S,
+          h: 34 * S,
+          collected: false
+        };
+      }
+
+      function resetPrizePosition() {
+        if (!prize || prize.collected) return;
+        const centerX = W / 2;
+        prize.x = centerX - prize.w / 2;
+      }
+
       function spawnCactusCluster() {
+        if (teleported && score > 9950) return;
+        if (teleported && postTeleportTime > 4.5) return;
         const progress = clamp(score / GOAL, 0, 1);
         const brutal = progress > 0.72;
         const insane = progress > 0.84;
@@ -490,7 +565,10 @@
         let clusters = 1;
         let count = 1;
 
-        if (progress < 0.25) {
+        if (teleported) {
+          count = Math.random() < 0.5 ? 1 : 2;
+          clusters = 1;
+        } else if (progress < 0.25) {
           count = Math.random() < 0.22 ? 2 : 1;
         } else if (progress < 0.55) {
           count = Math.random() < 0.55 ? 2 : 3;
@@ -520,21 +598,8 @@
         }
       }
 
-      function spawnPostTeleportObstacle() {
-        const h = rnd(34, 50) * S;
-        const count = Math.random() < 0.35 ? 2 : 1;
-        obstacles.push({
-          x: W + rnd(40, 120) * S,
-          y: GROUND - h,
-          w: (18 + count * 14) * S,
-          h,
-          count,
-          type: "cactus"
-        });
-      }
-
       function spawnFirewall() {
-        if (firewall) return;
+        if (firewall || teleported) return;
         firewall = {
           x: W + 105 * S,
           y: 64 * S,
@@ -544,152 +609,133 @@
         };
       }
 
-      function updateBack(dt, canCharge) {
-        const held = !!keys.Back;
-        const targetX = held ? MIN_X : START_X;
-        const rate = (held ? 305 : 185) * S;
-        const dx = targetX - dino.x;
-        dino.x += clamp(dx, -rate * dt, rate * dt);
+      function addRewindSpark() {
+        sparks.push({
+          kind: "rewind",
+          x: dino.x + rnd(-36, 28) * S,
+          y: dino.y + rnd(5, dino.h - 4),
+          vx: rnd(-90, 40) * S,
+          vy: rnd(-22, 22) * S,
+          s: rnd(2, 5) * S,
+          life: rnd(0.24, 0.55),
+          max: 0.55
+        });
+      }
 
-        if (!held) {
+      function updateIntro(dt) {
+        if (keys.Back) {
+          dino.x = Math.max(MIN_X, dino.x - 58 * S * dt);
+          rewindCharge = Math.min(INTRO_TELEPORT_NEED, rewindCharge + dt);
+          if (Math.random() < dt * 17) addRewindSpark();
+          const depth = clamp((START_X - dino.x) / Math.max(1, START_X - MIN_X), 0, 1);
+          fade.style.opacity = String(Math.min(0.28, depth * 0.28));
+          if (rewindCharge >= INTRO_TELEPORT_NEED && depth > 0.55) openPortal("intro");
+        } else {
+          dino.x += (START_X - dino.x) * Math.min(1, dt * 5.2);
           clearRewindEffects();
-          return;
         }
+        for (const c of clouds) c.x -= c.v * dt * 0.18;
+        for (const c of clouds) if (c.x < -120 * S) c.x = W + rnd(20, 180 * S);
+        dino.step += dt * 2;
+      }
 
-        if (teleported && state === "play") {
+      function updatePortal(dt) {
+        portalTimer += dt;
+        const p = clamp(portalTimer / 1.35, 0, 1);
+        if (portal) {
+          portal.r = (12 + p * 52) * S;
+          const tx = portal.x - dino.w * 0.46;
+          const ty = portal.y - dino.h * 0.50;
+          dino.x += (tx - dino.x) * Math.min(1, dt * (2.6 + p * 6.0));
+          dino.y += (ty - dino.y) * Math.min(1, dt * (2.2 + p * 6.5));
+          dino.portalScale = Math.max(0.18, 1 - p * 0.82);
+        }
+        shake = Math.max(shake, (1 - p) * 8 * S);
+        if (Math.random() < dt * 40) addRewindSpark();
+
+        if (portalTimer >= 1.35) {
+          state = "play";
+          teleported = true;
+          postTeleportTime = 0;
+          score = TELEPORT_TARGET_SCORE;
+          speed = POST_TELEPORT_SPEED * S;
+          groundOffset = 0;
           rewindCharge = 0;
+          portal = null;
+          firewall = null;
+          obstacles = [];
+          sparks = [];
+          dust = [];
+          dino.x = START_X;
+          dino.y = GROUND - dino.h;
+          dino.vy = 0;
+          dino.ground = true;
+          dino.portalScale = 1;
+          nextSpawn = 0.55;
           fade.style.opacity = "0";
-          sparks = sparks.filter(sp => sp.kind !== "rewind" && sp.kind !== "portal");
-          return;
-        }
-
-        if (!canCharge) {
-          fade.style.opacity = "0";
-          return;
-        }
-
-        const depth = clamp((START_X - dino.x) / Math.max(1, START_X - MIN_X), 0, 1);
-        rewindCharge += dt * (0.58 + depth * 0.92);
-
-        if (depth > 0.20) {
-          fade.style.opacity = String(clamp(0.05 + rewindCharge / TELEPORT_NEED * 0.30, 0.05, 0.35));
-        }
-
-        if (depth > 0.58) {
-          shake = Math.max(shake, Math.min(3.2 * S, rewindCharge * 0.28 * S));
-        }
-
-        if (Math.random() < dt * 16 * Math.max(0.04, depth)) {
-          sparks.push({
-            x: rnd(14 * S, START_X + 18 * S),
-            y: rnd(82 * S, GROUND + 11 * S),
-            life: rnd(0.08, 0.18),
-            max: 0.18,
-            s: rnd(1.2, 2.5) * S,
-            kind: "rewind"
-          });
-        }
-
-        if (state === "intro" && rewindCharge >= INTRO_TELEPORT_NEED && depth > 0.62) {
-          openPortal("intro");
-          return;
-        }
-
-        if (state === "play" && !teleported && rewindCharge >= TELEPORT_NEED && depth > 0.62) {
-          openPortal("play");
+          if (portalSource === "intro") runTime = 0;
         }
       }
 
-      function updatePhysics(dt) {
-        dino.y += dino.vy * dt;
+      function updatePlay(dt) {
+        runTime += dt;
+        if (teleported) postTeleportTime += dt;
+        const progress = clamp(score / GOAL, 0, 1);
+        if (teleported) {
+          const finalProgress = clamp((score - TELEPORT_TARGET_SCORE) / (GOAL - TELEPORT_TARGET_SCORE), 0, 1);
+          speed = (POST_TELEPORT_SPEED - finalProgress * 240) * S;
+          speed = Math.max(210 * S, speed);
+        } else {
+          speed = (BASE_SPEED + progress * (MAX_SPEED - BASE_SPEED) + Math.min(190, runTime * 7.5)) * S;
+        }
+
+        if (score >= GOAL - 18) {
+          speed = Math.min(speed, 245 * S);
+        }
+
+        const scoreRate = SCORE_BASE + SCORE_SPEED_BONUS * clamp((speed / S - BASE_SPEED) / (MAX_SPEED - BASE_SPEED), 0, 1);
+        score += dt * scoreRate;
+        if (teleported && score > 9978) {
+          score += dt * 5.2;
+        }
+        if (score > GOAL) score = GOAL;
+        setScoreText();
+
+        groundOffset = (groundOffset + speed * dt) % Math.max(1, W + 140 * S);
+
+        if (keys.Back && !teleported) {
+          dino.x = Math.max(MIN_X, dino.x - 62 * S * dt);
+          rewindCharge = Math.min(TELEPORT_NEED, rewindCharge + dt);
+          if (Math.random() < dt * 24) addRewindSpark();
+          fade.style.opacity = String(Math.min(0.34, rewindCharge / TELEPORT_NEED * 0.34));
+          const depth = clamp((START_X - dino.x) / Math.max(1, START_X - MIN_X), 0, 1);
+          if (rewindCharge >= TELEPORT_NEED && depth > 0.42) openPortal("play");
+          return;
+        } else if (!keys.Back && !teleported) {
+          dino.x += (START_X - dino.x) * Math.min(1, dt * 4.8);
+          if (rewindCharge > 0) clearRewindEffects();
+        } else if (teleported) {
+          dino.x += (START_X - dino.x) * Math.min(1, dt * 4.2);
+          fade.style.opacity = "0";
+        }
+
         dino.vy += GRAVITY * dt;
-        const floor = GROUND - dino.h;
-        if (dino.y >= floor) {
-          dino.y = floor;
+        dino.y += dino.vy * dt;
+        if (dino.y >= GROUND - dino.h) {
+          dino.y = GROUND - dino.h;
           dino.vy = 0;
           dino.ground = true;
         } else {
           dino.ground = false;
         }
-      }
 
-      function updateIntro(dt) {
-        updateBack(dt, true);
-        if (state !== "intro") return;
-        dino.y = GROUND - dino.h;
-        dino.vy = 0;
-        dino.ground = true;
-        dino.step += dt * (keys.Back ? 9 : 2.4);
-        hint.textContent = "PRESS SPACE";
-      }
+        dino.step += dt * (dino.ground ? speed / (58 * S) : 1.7);
 
-      function updatePlay(dt) {
-        runTime += dt;
-        const progress = clamp(score / GOAL, 0, 1);
-        if (teleported) {
-          postTeleportTime += dt;
-          const finishSlow = clamp((score - 9982) / 18, 0, 1);
-          const softRise = Math.min(64, postTeleportTime * 9);
-          speed = Math.max(260 * S, (POST_TELEPORT_SPEED + softRise - finishSlow * 340) * S);
-        } else {
-          speed = (BASE_SPEED + Math.min(runTime * 6.2, 290) + progress * 420) * S;
-          speed = Math.min(MAX_SPEED * S, speed);
-        }
-
-        const speedPart = clamp((speed / S - BASE_SPEED) / (MAX_SPEED - BASE_SPEED), 0, 1);
-        let scoreGain = dt * (SCORE_BASE + speedPart * SCORE_SPEED_BONUS);
-        if (teleported) scoreGain *= 1.12;
-        score += scoreGain;
-        score = Math.min(score, GOAL + 80);
-        if (score >= GOAL) {
-          if (teleported) {
-            win();
-          } else {
-            die();
-          }
-          return;
-        }
-        groundOffset = (groundOffset + speed * dt) % Math.max(1, W + 140 * S);
-        shake = Math.max(0, shake - 28 * S * dt);
-
-        updateBack(dt, true);
-        if (state !== "play") return;
-
-        updatePhysics(dt);
-        dino.step += dt * (dino.ground ? speed / (31 * S) : 4.5);
-
-        if (teleported && prize) {
-          prize.t += dt;
-          const p = clamp((score - TELEPORT_TARGET_SCORE) / (GOAL - TELEPORT_TARGET_SCORE), 0, 1);
-          const ease = 1 - Math.pow(1 - p, 3);
-          const startX = W + 190 * S;
-          const targetX = prize.targetX || W / 2 - 43 * S;
-          prize.x = startX + (targetX - startX) * ease;
-          prize.y = GROUND - prize.h - 5 * S + Math.sin(prize.t * 3.0) * 2 * S;
-          if (score > 9954) {
-            obstacles = [];
-            nextSpawn = 999;
-          }
-        }
-
-        if (!teleported && score >= FIREWALL_SCORE) spawnFirewall();
+        if (!teleported && score > FIREWALL_SCORE) spawnFirewall();
         if (firewall) {
-          firewall.x -= speed * 1.16 * dt;
-          firewall.t += dt * 18;
-
-          const close = firewall.x < dino.x + dino.w + 260 * S;
-          const depth = clamp((START_X - dino.x) / Math.max(1, START_X - MIN_X), 0, 1);
-          if (!teleported && keys.Back && close && depth > 0.54 && rewindCharge >= TELEPORT_NEED * 0.82) {
-            openPortal("play");
-            return;
-          }
-
-          const wallBox = {
-            x: firewall.x,
-            y: firewall.y,
-            w: firewall.w + 18 * S,
-            h: firewall.h
-          };
+          firewall.x -= speed * dt * 0.92;
+          firewall.t += dt;
+          const wallBox = { x: firewall.x + 5 * S, y: firewall.y, w: firewall.w - 10 * S, h: firewall.h };
           const dinoBox = hitbox();
           if (rects(dinoBox, wallBox) || score >= GOAL + 20) {
             die();
@@ -697,22 +743,17 @@
           }
         }
 
+        if (teleported && score >= 9934) spawnPostTeleportPrize();
+        if (teleported && score >= 9982) resetPrizePosition();
+
         nextSpawn -= dt;
         if (!firewall && nextSpawn <= 0) {
-          if (teleported) {
-            if (score < 9948) {
-              spawnPostTeleportObstacle();
-              nextSpawn = rnd(1.10, 1.70);
-            } else {
-              nextSpawn = 999;
-            }
-          } else {
-            spawnCactusCluster();
-            const density = clamp(score / GOAL, 0, 1);
-            const fast = clamp((speed / S - BASE_SPEED) / (MAX_SPEED - BASE_SPEED), 0, 1);
-            nextSpawn = rnd(0.95, 1.75) * (1 - density * 0.44) * (1 - fast * 0.22);
-            if (score > DANGER_SCORE) nextSpawn *= 0.55;
-          }
+          spawnCactusCluster();
+          const density = clamp(score / GOAL, 0, 1);
+          const fast = clamp((speed / S - BASE_SPEED) / (MAX_SPEED - BASE_SPEED), 0, 1);
+          nextSpawn = rnd(0.95, 1.75) * (1 - density * 0.44) * (1 - fast * 0.22);
+          if (score > DANGER_SCORE) nextSpawn *= 0.55;
+          if (teleported) nextSpawn = rnd(1.1, 1.9);
         }
 
         if (clouds.length < 8 && Math.random() < dt * 0.8) spawnCloud();
@@ -720,234 +761,164 @@
         clouds = clouds.filter(c => c.x > -130 * S);
 
         for (const ob of obstacles) ob.x -= speed * dt;
-        obstacles = obstacles.filter(ob => ob.x > -170 * S);
-
-        if (dino.ground && Math.random() < dt * 16) {
-          dust.push({
-            x: dino.x + 5 * S,
-            y: GROUND - 4 * S,
-            vx: rnd(-22, 24) * S,
-            vy: rnd(-20, 8) * S,
-            life: rnd(0.13, 0.32),
-            s: rnd(1.1, 2.8) * S
-          });
+        if (teleported && score > 9976) {
+          obstacles = obstacles.filter(ob => ob.x < dino.x - 80 * S || ob.x > W + 80 * S);
+        } else {
+          obstacles = obstacles.filter(ob => ob.x > -170 * S);
         }
 
-        for (const p of dust) {
-          p.x -= (speed * 0.70 + p.vx) * dt;
-          p.y += p.vy * dt;
-          p.life -= dt;
-        }
-        dust = dust.filter(p => p.life > 0);
-
-        for (const sp of sparks) sp.life -= dt;
-        sparks = sparks.filter(sp => sp.life > 0);
-
-        const box = hitbox();
-        for (const ob of obstacles) {
-          const obBox = {
-            x: ob.x + 4 * S,
-            y: ob.y + 3 * S,
-            w: ob.w - 8 * S,
-            h: ob.h - 3 * S
+        if (prize && !prize.collected) {
+          if (score < 9982) prize.x -= speed * dt * 0.68;
+          const keyBox = {
+            x: prize.x,
+            y: prize.y - 16 * S,
+            w: prize.w,
+            h: prize.h + 24 * S
           };
-          if (rects(box, obBox)) {
+          if (score >= GOAL || rects(hitbox(), keyBox)) {
+            prize.collected = true;
+            win();
+            return;
+          }
+        }
+
+        const dinoBox = hitbox();
+        for (const ob of obstacles) {
+          const box = {
+            x: ob.x + 4 * S,
+            y: ob.y + 5 * S,
+            w: ob.w - 8 * S,
+            h: ob.h - 7 * S
+          };
+          if (rects(dinoBox, box)) {
             die();
             return;
           }
         }
-      }
 
-      function updatePortal(dt) {
-        portalTimer += dt;
-        shake = Math.max(0, shake - 12 * S * dt);
-        if (!portal) openPortal(portalSource);
-
-        portal.r = Math.min(66 * S, portal.r + 92 * S * dt);
-        const targetX = portal.x - dino.w * 0.46;
-        const targetY = portal.y - dino.h * 0.50;
-        dino.x += (targetX - dino.x) * Math.min(1, dt * 5.2);
-        dino.y += (targetY - dino.y) * Math.min(1, dt * 5.2);
-        dino.vy = 0;
-        dino.ground = false;
-        dino.portalScale = Math.max(0.08, 1 - portalTimer * 0.72);
-        dino.step += dt * 18;
-        const target = TELEPORT_TARGET_SCORE;
-        const pull = portalSource === "intro" ? 0.30 : 0.18;
-        score += (target - score) * Math.min(1, dt * (2.2 + pull));
-        score = Math.min(target, score);
-        fade.style.opacity = String(Math.min(0.76, 0.26 + portalTimer * 0.22));
-
-        for (let i = 0; i < 4; i++) {
-          sparks.push({
-            x: portal.x + rnd(-portal.r, portal.r),
-            y: portal.y + rnd(-portal.r * 0.9, portal.r * 0.9),
-            life: rnd(0.10, 0.30),
-            max: 0.30,
-            s: rnd(1.2, 3.2) * S,
-            kind: "portal"
-          });
-        }
-
-        for (const sp of sparks) sp.life -= dt;
-        sparks = sparks.filter(sp => sp.life > 0);
-
-        if (portalTimer > 1.72) finishTeleport();
-      }
-
-      function updateDead(dt) {
-        shake = Math.max(0, shake - 28 * S * dt);
-      }
-
-      function updateWin(dt) {
-        endingTimer += dt;
-        fade.style.opacity = "0";
-        if (prize) {
-          prize.t += dt;
-          prize.x += (W / 2 - prize.w / 2 - prize.x) * Math.min(1, dt * 2.8);
-          prize.y = GROUND - prize.h - 4 * S + Math.sin(endingTimer * 3.2) * 3 * S;
-        }
-        for (const sp of sparks) sp.life -= dt;
-        sparks = sparks.filter(sp => sp.life > 0);
-        if (Math.random() < dt * 14) {
-          sparks.push({
-            x: W / 2 + rnd(-60, 60) * S,
-            y: GROUND - 104 * S + rnd(-40, 30) * S,
-            life: rnd(0.18, 0.34),
-            max: 0.34,
-            s: rnd(1.4, 3.0) * S,
-            kind: "prize"
+        if (dino.ground && Math.random() < dt * 16) {
+          dust.push({
+            x: dino.x + 5 * S,
+            y: GROUND + 3 * S,
+            s: rnd(2, 4) * S,
+            life: rnd(0.18, 0.42)
           });
         }
       }
 
-      function update(dt) {
-        if (state === "intro") updateIntro(dt);
-        else if (state === "play") updatePlay(dt);
-        else if (state === "portal") updatePortal(dt);
-        else if (state === "dead") updateDead(dt);
-        else if (state === "win") updateWin(dt);
-        setScoreText();
+      function updateParticles(dt) {
+        dust.forEach(p => {
+          p.x -= speed * dt * 0.55;
+          p.life -= dt;
+        });
+        dust = dust.filter(p => p.life > 0);
+
+        sparks.forEach(sp => {
+          sp.x += sp.vx * dt;
+          sp.y += sp.vy * dt;
+          sp.life -= dt;
+        });
+        sparks = sparks.filter(sp => sp.life > 0);
       }
 
       function hitbox() {
         return {
-          x: dino.x + 6 * S,
-          y: dino.y + 5 * S,
-          w: dino.w - 13 * S,
-          h: dino.h - 7 * S
+          x: dino.x + dino.w * 0.22,
+          y: dino.y + dino.h * 0.14,
+          w: dino.w * 0.55,
+          h: dino.h * 0.80
         };
       }
 
-      function drawCloud(c) {
-        ctx.save();
-        ctx.translate(c.x, c.y);
-        ctx.scale(c.s, c.s);
-        px(0, 18, 61, 3, LIGHT);
-        px(8, 14, 12, 3, LIGHT);
-        px(15, 10, 20, 3, LIGHT);
-        px(30, 7, 15, 3, LIGHT);
-        px(42, 11, 14, 3, LIGHT);
-        px(56, 15, 8, 3, LIGHT);
-        ctx.restore();
-      }
-
       function drawDino() {
-        const unit = dinoUnit() * dino.portalScale;
-        const ox = Math.round(dino.x);
-        const oy = Math.round(dino.y);
-        const frame = Math.floor(dino.step) % 2;
-        const fillSize = Math.ceil(unit) + 0.6;
-        const eyeColor = "#2f2f2f";
-        const shade = "#494949";
+        const u = dinoUnit() * dino.portalScale;
+        const wobble = state === "portal" ? Math.sin(portalTimer * 24) * 2 * S : 0;
+        const leg = Math.floor(dino.step * 9) % 2;
+        const x0 = dino.x + wobble;
+        const y0 = dino.y + (1 - dino.portalScale) * dino.h * 0.45;
 
         ctx.save();
-        ctx.imageSmoothingEnabled = false;
-        if (dino.portalScale < 1) ctx.globalAlpha = clamp(dino.portalScale + 0.14, 0, 1);
-
-        for (let r = 0; r < DINO_ROWS; r++) {
-          const row = DINO_SPRITE[r];
-          for (let c = 0; c < DINO_COLS; c++) {
-            const cell = row[c];
-            if (cell === " ") continue;
-            const color = cell === "E" ? eyeColor : (r < 4 ? shade : INK);
-            px(ox + c * unit, oy + r * unit, fillSize, fillSize, color);
+        ctx.globalAlpha = state === "portal" ? Math.max(0.25, dino.portalScale) : 1;
+        for (let row = 0; row < DINO_ROWS; row++) {
+          for (let col = 0; col < DINO_COLS; col++) {
+            const cell = DINO_SPRITE[row][col];
+            if (cell === "#") {
+              px(x0 + col * u, y0 + row * u, u, u, INK);
+            } else if (cell === "E") {
+              px(x0 + col * u, y0 + row * u, u, u, "#f7f7f7");
+            }
           }
         }
 
-        const swing = frame === 0 ? 0 : 1;
-        px(ox + 3 * unit, oy + (11 + swing) * unit, 5 * unit, 2 * unit, INK);
-        px(ox + 1 * unit, oy + (10 + swing) * unit, 3 * unit, 3 * unit, INK);
-        px(ox + 18 * unit, oy + 8 * unit, 4 * unit, 2 * unit, INK);
-
-        if (state === "dead") {
-          px(ox + 9 * unit, oy + 5 * unit, fillSize, fillSize, eyeColor);
-          px(ox + 12 * unit, oy + 5 * unit, fillSize, fillSize, eyeColor);
+        const footY = y0 + 23 * u;
+        if (state === "play" && dino.ground) {
+          if (leg === 0) {
+            px(x0 + 5 * u, footY, 5 * u, u, INK);
+            px(x0 + 14 * u, footY, 2 * u, u, INK);
+          } else {
+            px(x0 + 7 * u, footY, 2 * u, u, INK);
+            px(x0 + 13 * u, footY, 5 * u, u, INK);
+          }
         }
         ctx.restore();
+      }
+
+      function drawCloud(c) {
+        const s = c.s;
+        px(c.x, c.y + 18 * s, 76 * s, 5 * s, LIGHT);
+        px(c.x + 11 * s, c.y + 11 * s, 18 * s, 5 * s, LIGHT);
+        px(c.x + 28 * s, c.y + 6 * s, 23 * s, 5 * s, LIGHT);
+        px(c.x + 49 * s, c.y + 12 * s, 19 * s, 5 * s, LIGHT);
+        px(c.x + 20 * s, c.y + 23 * s, 50 * s, 4 * s, LIGHT);
       }
 
       function drawCactus(ob) {
-        for (let i = 0; i < ob.count; i++) {
-          const ox = i * 18 * S;
-          const h = Math.max(31 * S, ob.h - i * 4.5 * S);
-          const top = ob.y + ob.h - h;
-          const x = ob.x + ox;
-          px(x + 6 * S, top, 10 * S, h);
-          px(x + 3 * S, top + 11 * S, 6 * S, 11 * S);
-          px(x + 1 * S, top + 11 * S, 5 * S, 5 * S);
-          px(x + 14 * S, top + 21 * S, 7 * S, 11 * S);
-          px(x + 18 * S, top + 21 * S, 5 * S, 5 * S);
-          px(x + 4 * S, top + h - 5 * S, 15 * S, 5 * S);
+        const count = ob.count || 1;
+        const unitW = ob.w / Math.max(1, count);
+        for (let i = 0; i < count; i++) {
+          const x = ob.x + i * unitW + unitW * 0.22;
+          const h = ob.h * (0.82 + (i % 2) * 0.16);
+          const y = GROUND - h;
+          const stem = Math.max(8 * S, unitW * 0.34);
+          const arm = Math.max(6 * S, stem * 0.70);
+          px(x, y, stem, h, INK);
+          px(x - arm, y + h * 0.35, arm, stem, INK);
+          px(x - arm, y + h * 0.35 - stem * 1.2, stem, stem * 1.6, INK);
+          px(x + stem, y + h * 0.52, arm, stem, INK);
+          px(x + stem + arm - stem, y + h * 0.52 - stem * 1.2, stem, stem * 1.6, INK);
         }
-      }
-
-      function drawPrize() {
-        if (!prize) return;
-        const x = prize.x;
-        const y = prize.y;
-        const bob = Math.sin((prize.t || 0) * 4) * 2 * S;
-
-        ctx.save();
-        ctx.globalAlpha = 0.92;
-        drawKeyIcon(x + 43 * S, y + 32 * S + bob, 1.05, INK, true);
-        ctx.globalAlpha = 0.18;
-        ctx.strokeStyle = SOFT;
-        ctx.lineWidth = Math.max(2, 2 * S);
-        ctx.beginPath();
-        ctx.ellipse(x + 43 * S, y + 34 * S + bob, 42 * S, 30 * S, 0, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.restore();
-      }
-
-      function drawKeyIcon(cx, cy, scale, color, cutHole = false) {
-        const u = Math.max(2, Math.round(4 * S * scale));
-        const x = Math.round(cx - 13 * u);
-        const y = Math.round(cy - 4 * u);
-        px(x + 0 * u, y + 0 * u, 6 * u, 6 * u, color);
-        if (cutHole) px(x + 2 * u, y + 2 * u, 2 * u, 2 * u, BG);
-        px(x + 6 * u, y + 2 * u, 15 * u, 2 * u, color);
-        px(x + 18 * u, y + 4 * u, 2 * u, 3 * u, color);
-        px(x + 22 * u, y + 4 * u, 2 * u, 3 * u, color);
-        px(x + 20 * u, y + 2 * u, 6 * u, 2 * u, color);
       }
 
       function drawFirewall() {
         if (!firewall) return;
+        ctx.save();
+        ctx.globalAlpha = 0.86 + Math.sin(firewall.t * 17) * 0.10;
         const x = firewall.x;
-        const pulse = Math.floor(firewall.t) % 2;
         px(x, firewall.y, firewall.w, firewall.h, INK);
-        px(x - 12 * S, firewall.y + 18 * S, 9 * S, firewall.h - 34 * S, SOFT);
-        px(x + firewall.w + 5 * S, firewall.y + 8 * S, 6 * S, firewall.h - 18 * S, SOFT);
-        for (let y = firewall.y + 10 * S; y < GROUND - 18 * S; y += 27 * S) {
-          px(x - (pulse ? 20 : 9) * S, y, 17 * S, 3 * S, SOFT);
-          px(x + firewall.w + (pulse ? 8 : 18) * S, y + 11 * S, 22 * S, 3 * S, SOFT);
+        for (let y = firewall.y + 13 * S; y < firewall.y + firewall.h; y += 24 * S) {
+          px(x - 15 * S, y, 18 * S, 3 * S, INK);
+          px(x + firewall.w - 2 * S, y + 9 * S, 16 * S, 3 * S, INK);
         }
+        ctx.restore();
+      }
+
+      function drawPrize() {
+        if (!prize || prize.collected) return;
+        const x = prize.x;
+        const y = prize.y;
+        ctx.save();
+        ctx.globalAlpha = 0.85 + Math.sin(runTime * 8) * 0.10;
+        px(x, y, 25 * S, 25 * S, INK);
+        px(x + 25 * S, y + 9 * S, 66 * S, 8 * S, INK);
+        px(x + 88 * S, y + 17 * S, 7 * S, 16 * S, INK);
+        px(x + 61 * S, y + 17 * S, 7 * S, 13 * S, INK);
+        px(x + 30 * S, y + 12 * S, 65 * S, 3 * S, SOFT);
+        ctx.restore();
       }
 
       function drawGround() {
         ctx.strokeStyle = INK;
-        ctx.lineWidth = Math.max(2, 2 * S);
+        ctx.lineWidth = Math.max(2, 3 * S);
         ctx.beginPath();
         ctx.moveTo(0, GROUND + 0.5);
         ctx.lineTo(W, GROUND + 0.5);
@@ -1000,7 +971,6 @@
       }
 
       function drawRewindNoise() {
-        if (teleported && state === "play") return;
         if (state !== "portal" && (!keys.Back || rewindCharge <= 0.04)) return;
         const amount = state === "portal" ? 0.50 : Math.min(0.34, rewindCharge / TELEPORT_NEED * 0.34);
         ctx.save();
@@ -1008,6 +978,49 @@
         for (let i = 0; i < 15; i++) {
           px(rnd(0, START_X + 18 * S), rnd(78 * S, GROUND + 10 * S), rnd(8, 52) * S, Math.max(1, S), INK);
         }
+        ctx.restore();
+      }
+
+      function drawKeyShape(cx, cy, scale, color, shade = null) {
+        const s = scale * S;
+        px(cx - 106 * s, cy - 15 * s, 32 * s, 32 * s, color);
+        px(cx - 73 * s, cy - 4 * s, 70 * s, 9 * s, color);
+        px(cx - 2 * s, cy - 3 * s, 25 * s, 9 * s, shade || color);
+        px(cx + 23 * s, cy - 4 * s, 78 * s, 9 * s, shade || color);
+        px(cx + 96 * s, cy + 5 * s, 9 * s, 22 * s, shade || color);
+        px(cx + 45 * s, cy + 5 * s, 9 * s, 18 * s, shade || color);
+      }
+
+      function drawWinPanel() {
+        const t = endingTimer;
+        const w = Math.min(W * 0.68, 600 * S);
+        const h = Math.min(H * 0.42, 260 * S);
+        const x = (W - w) / 2;
+        const y = Math.max(96 * S, H * 0.30 - h * 0.42);
+        ctx.save();
+        ctx.globalAlpha = Math.min(1, t * 1.7);
+        ctx.fillStyle = BG;
+        ctx.fillRect(x, y, w, h);
+        ctx.strokeStyle = INK;
+        ctx.lineWidth = Math.max(2, 3 * S);
+        ctx.strokeRect(x, y, w, h);
+
+        ctx.textAlign = "center";
+        ctx.fillStyle = INK;
+        ctx.font = `${Math.round(34 * S)}px Consolas, monospace`;
+        ctx.fillText("FIRST KEY FOUND", W / 2, y + 66 * S);
+
+        const keyY = y + 136 * S;
+        drawKeyShape(W / 2 - 156 * S, keyY, 0.60, INK);
+        drawKeyShape(W / 2, keyY, 0.60, SOFT, SOFT);
+        drawKeyShape(W / 2 + 156 * S, keyY, 0.60, SOFT, SOFT);
+
+        ctx.font = `${Math.round(20 * S)}px Consolas, monospace`;
+        ctx.fillStyle = INK;
+        ctx.fillText("OASIS ACCESS GRANTED", W / 2, y + 194 * S);
+        ctx.font = `${Math.round(12 * S)}px Consolas, monospace`;
+        ctx.fillStyle = SOFT;
+        ctx.fillText("ANORAK WAS HERE", W / 2, y + 232 * S);
         ctx.restore();
       }
 
@@ -1021,71 +1034,51 @@
         }
 
         if (state === "win") {
-          const t = endingTimer;
-          const panelW = Math.min(W - 52 * S, 540 * S);
-          const panelH = 204 * S;
-          const panelX = W / 2 - panelW / 2;
-          const panelY = Math.max(112 * S, H * 0.255);
-
-          ctx.save();
-          ctx.fillStyle = BG;
-          ctx.fillRect(panelX, panelY, panelW, panelH);
-          ctx.strokeStyle = INK;
-          ctx.lineWidth = Math.max(2, 2 * S);
-          ctx.strokeRect(panelX, panelY, panelW, panelH);
-
-          ctx.textAlign = "center";
-          ctx.fillStyle = INK;
-          ctx.font = `${Math.round(30 * S)}px Consolas, monospace`;
-          ctx.fillText("FIRST KEY FOUND", W / 2, panelY + 50 * S);
-
-          const keyY = panelY + 100 * S;
-          for (let i = 0; i < 3; i++) {
-            const kx = W / 2 - 104 * S + i * 104 * S;
-            const bob = Math.sin(t * 3.4 + i) * 2 * S;
-            drawKeyIcon(kx, keyY + bob, i === 0 ? 0.92 : 0.74, i === 0 ? INK : SOFT, false);
-          }
-
-          ctx.font = `${Math.round(17 * S)}px Consolas, monospace`;
-          ctx.fillStyle = INK;
-          ctx.fillText("OASIS ACCESS GRANTED", W / 2, panelY + 145 * S);
-
-          ctx.font = `${Math.round(11 * S)}px Consolas, monospace`;
-          ctx.globalAlpha = 0.72;
-          ctx.fillText("ANORAK WAS HERE", W / 2, panelY + 176 * S);
-          ctx.restore();
+          drawWinPanel();
         }
       }
 
-      function render() {
+      function draw() {
+        ctx.save();
+        ctx.clearRect(0, 0, W, H);
         ctx.fillStyle = BG;
         ctx.fillRect(0, 0, W, H);
-
-        const sx = shake ? rnd(-shake, shake) : 0;
-        const sy = shake ? rnd(-shake * 0.42, shake * 0.42) : 0;
-        ctx.save();
-        ctx.translate(sx, sy);
-
+        if (shake > 0.1) {
+          ctx.translate(rnd(-shake, shake), rnd(-shake * 0.4, shake * 0.4));
+        }
         for (const c of clouds) drawCloud(c);
+        drawRewindNoise();
+        drawPortal();
+        drawPrize();
         drawGround();
         drawDust();
         for (const ob of obstacles) drawCactus(ob);
         drawFirewall();
-        drawPrize();
-        drawPortal();
-        drawSparks();
         drawDino();
-        drawRewindNoise();
+        drawSparks();
         drawMessage();
-
         ctx.restore();
       }
 
+      function update(dt) {
+        if (state === "intro") updateIntro(dt);
+        else if (state === "play") updatePlay(dt);
+        else if (state === "portal") updatePortal(dt);
+        else if (state === "win") {
+          endingTimer += dt;
+          for (const c of clouds) c.x -= c.v * dt * 0.14;
+          for (const c of clouds) if (c.x < -120 * S) c.x = W + rnd(20, 180 * S);
+        }
+        if (state === "play" || state === "portal") updateParticles(dt);
+        shake *= Math.pow(0.02, dt);
+        if (state !== "dead") setScoreText();
+      }
+
       function loop(now) {
-        const dt = Math.min(0.033, Math.max(0, (now - last) / 1000 || 0));
+        const dt = Math.min(0.033, Math.max(0, (now - last) / 1000));
         last = now;
         update(dt);
-        render();
+        draw();
         requestAnimationFrame(loop);
       }
 
