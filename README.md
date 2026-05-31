@@ -1,15 +1,18 @@
 # Ready Runner One
 
-A small fullscreen browser runner inspired by classic pixel arcade games.
+A small fullscreen pixel runner where the obvious path is not always the right one.
 
 Reach `10000` points and find the key.
 
-## Play locally
+## Play
 
-Open `index.html` in any modern browser.
+Open the GitHub Pages link or run `index.html` locally in any modern browser.
 
 ## Controls
 
 - `Space` - start / jump / restart
 
-No build step, dependencies, or package manager are required.
+## Tech
+
+Pure HTML, CSS, and JavaScript.  
+No build step, dependencies, or package manager required.
