@@ -16,3 +16,7 @@ Open the GitHub Pages link or run `index.html` locally in any modern browser.
 
 Pure HTML, CSS, and JavaScript.  
 No build step, dependencies, or package manager required.
+
+## Screenshot
+
+![Ready Runner One screenshot](./docs/screenshot.png)
